@@ -43,6 +43,7 @@ kbd{font:10px ui-monospace,monospace;opacity:.6;border:1px solid currentColor;bo
 </div>
 <div id="wrap"><canvas id="c"></canvas><div id="hint"></div></div>
 <div id="rp">
+<div id="contextPanel" class="inspector"><div class="inspector-head"><div><div class="lab">Inspector</div><b>Nothing selected</b></div><span class="inspector-empty">—</span></div><div class="inspector-body">Select an object on the canvas to view its properties.</div></div>
 <div id="pp"><b id="pb">Text settings</b><input type="text" id="pt" title="Text content of the selected label"><select id="pm" title="Plane the selected text/icon lies on"><option value="s">Straight</option><option value="i">Floor isometric</option><option value="a">Vertical (X–Z)</option><option value="b">Vertical (Y–Z)</option></select><label id="psl" title="Scale of the selected text or icon">Size <input type="range" id="ps" min=".4" max="4" step=".1" style="width:100%"></label><div id="dset" style="display:none;flex-direction:column;gap:6px"><label title="Door width in grid cells">Width <input type="range" id="dw" min="1" max="4" step="1" style="width:100%"></label></div></div>
 <details open><summary>Style</summary>
 <div class="fld"><label title="Colour for new items; changes the selected item too">Colour<input type="color" id="col" value="#3b9ae1"></label></div>
@@ -68,7 +69,7 @@ kbd{font:10px ui-monospace,monospace;opacity:.6;border:1px solid currentColor;bo
 <div id="mod"><div id="mbox"></div></div><div id="ctx"></div>
 <script>
 const $=id=>document.getElementById(id),cv=$('c'),g=cv.getContext('2d'),TW=32,TH=16,Z=32;
-let I=[],sel=null,cell=null,tool='sel',gm='move',sm='obj',slice=true,ICONS=[],cur=null,IM={},shp='square',S={x:12,y:12,z:6},view={x:0,y:0,s:1},drag=null,hist=[],grid=true,col='#3b9ae1',lv=0,mode='iso',SN=.5,pd=null,hov=null,redoS=[],ed=null,modDone=null;
+let I=[],sel=null,cell=null,tool='sel',gm='move',sm='obj',slice=true,floorView='fade',ICONS=[],cur=null,IM={},shp='square',S={x:12,y:12,z:6},view={x:0,y:0,s:1},drag=null,hist=[],grid=true,col='#3b9ae1',lv=0,mode='iso',SN=.5,pd=null,hov=null,redoS=[],ed=null,modDone=null;
 const tp=()=>mode=='top';
 const T={sel:'Select',cube:'Cube',arr:'Arrow',txt:'Text',dot:'Dot',icon:'Icon',door:'Door',poly:'Custom',del:'Erase'};
 const H={sel:'Object mode: click an item to select it; the gizmo moves/scales it. Face mode: click a single grid square on a box; the gizmo then acts on just that square. Selected arrows have end handles; selected custom shapes have vertex handles (click an edge to add a vertex, Shift+click a vertex to remove it). Right-click an item for its settings; double-click text or a label (or press F2) to rename it. Drag empty space to pan, wheel to zoom.',cube:'Click the grid to drop a cube, or drag on the grid to draw a wall/room block (height = Cube H). Click a face square to add a cube against it.',sq:'Pick a shape from Shapes ▾, then drag on a cube face to draw it (top-down: also directly on the floor). It snaps to the grid and uses the colour picker. Select it later to move/scale it with the gizmo, recolour or delete it.',arr:'Drag on the current level to draw an arrow. Select it afterwards to drag its ends, or use the Scale gizmo.',txt:'Click to place the text typed in the toolbar.',dot:'Click to place a dot.',icon:'Click to place the selected icon (upload with + Icon). Double-click an icon thumbnail to remove it.',door:'Click near a grid edge to place a door; it only snaps to the edges/vertices of grid squares. Drag to slide it along edges. Change its colour with the colour picker and its width in the inspector.',poly:'Click to place vertices of a custom shape (floor-plan rooms, odd furniture). Click the first point, double-click or press Enter to close; Esc cancels. Then select it to add vertices on edges and drag vertices.',del:'Click an item to erase it.'};
@@ -156,8 +157,8 @@ for(let k=0;k<=SZ;k++){const q=RP(k);g.beginPath();g.arc(q[0],q[1],9,0,7);g.fill
 const V=new Map(),VB=new Set();I.forEach(o=>{if(o.t=='box')for(let a=0;a<o.w;a++)for(let b=0;b<o.d;b++){const side=a<2||a>=o.w-2||b<2||b>=o.d-2;for(let c=0;c<o.h;c++){if(!side&&c>=2&&c<o.h-2){c=o.h-3;continue}const k=(o.x+a)+','+(o.y+b)+','+(o.z+c);V.set(k,o.c);if(a==0||a==o.w-1||b==0||b==o.d-1||c==0||c==o.h-1)VB.add(k)}}});
 const vc=(x,y,z)=>V.get(x+','+y+','+z),K=it=>tp()?(it.sq?it.sq.k+.01:it.p[2]+1):it.p[0]+it.p[1]+it.p[2],vs=[...VB].map(k=>({p:k.split(',').map(Number),c:V.get(k)})).concat(I.filter(o=>o.t=='sq').map(o=>({sq:o,p:[sqKey(o),0,0]}))).sort((a,b)=>K(a)-K(b));
 const FF=[{n:[0,0,1],f:1.12,p:[[0,0,1],[1,0,1],[1,1,1],[0,1,1]],e:[[0,-1,0],[1,0,0],[0,1,0],[-1,0,0]]},{n:[1,0,0],f:.8,p:[[1,0,0],[1,1,0],[1,1,1],[1,0,1]],e:[[0,0,-1],[0,1,0],[0,0,1],[0,-1,0]]},{n:[0,1,0],f:.62,p:[[0,1,0],[1,1,0],[1,1,1],[0,1,1]],e:[[0,0,-1],[1,0,0],[0,0,1],[-1,0,0]]}];
-for(const it of vs){if(it.sq){const o=it.sq,on=I[sel]===o;g.globalAlpha=slice&&o.z0!=lv?.25:1;path(sqPts(o));g.fillStyle=o.c;g.fill();g.strokeStyle=on?'#ffb300':'rgba(0,0,0,.45)';g.lineWidth=on?2.5:1;g.stroke();continue}
-const{p:[x,y,z],c}=it;g.globalAlpha=slice&&z!=lv?.25:1;
+for(const it of vs){if(it.sq){const o=it.sq,on=I[sel]===o;g.globalAlpha=floorView=='fade'&&o.z0!=lv?.25:floorView=='hide'&&o.z0!=lv?0:1;path(sqPts(o));g.fillStyle=o.c;g.fill();g.strokeStyle=on?'#ffb300':'rgba(0,0,0,.45)';g.lineWidth=on?2.5:1;g.stroke();continue}
+const{p:[x,y,z],c}=it;g.globalAlpha=floorView=='fade'&&z!=lv?.25:floorView=='hide'&&z!=lv?0:1;
 for(const F of FF){if(tp()&&F.n[2]!=1)continue;const[nx,ny,nz]=F.n;if(vc(x+nx,y+ny,z+nz)!==undefined)continue;const q=F.p.map(t=>[x+t[0],y+t[1],z+t[2]]);
 path(q);g.fillStyle=g.strokeStyle=shade(c,F.f);g.lineWidth=.5;g.fill();g.stroke();g.strokeStyle='rgba(0,0,0,.4)';g.lineWidth=1;
 for(let k=0;k<4;k++){const[dx,dy,dz]=F.e[k],X=x+dx,Y=y+dy,Q=z+dz;if(vc(X,Y,Q)===c&&vc(X+nx,Y+ny,Q+nz)===undefined)continue;
@@ -166,7 +167,7 @@ g.globalAlpha=1;
 {const o=I[sel];if(o&&o.t=='box'){for(const f of faces(o)){if(tp()&&f.f!='t')continue;g.strokeStyle='rgba(255,255,255,.45)';g.lineWidth=1;for(let a=0;a<nI(o,f.f);a++)for(let b=0;b<nJ(o,f.f);b++){path(cp(o,f.f,a,b));g.stroke()}path(f.p);g.strokeStyle='#ffb300';g.lineWidth=2.5;g.stroke()}
 if(cell&&cell.i<nI(o,cell.f)&&cell.j<nJ(o,cell.f)){path(cp(o,cell.f,cell.i,cell.j));g.fillStyle='rgba(255,200,0,.55)';g.fill();g.strokeStyle='#e08a00';g.lineWidth=2;g.stroke()}}}
 g.globalAlpha=1;
-for(const o of I){if(o.t=='box'||o.t=='sq')continue;g.globalAlpha=slice&&Math.floor(o.z||0)!=lv?.25:1;g.fillStyle=g.strokeStyle=o.c;
+for(const o of I){if(o.t=='box'||o.t=='sq')continue;g.globalAlpha=floorView=='fade'&&Math.floor(o.z||0)!=lv?.25:floorView=='hide'&&Math.floor(o.z||0)!=lv?0:1;g.fillStyle=g.strokeStyle=o.c;
 if(o.t=='door'){const L=o.len||1,hz=o.o=='h',r=hz?[0,-.2,L,.4]:[-.2,0,.4,L],a0=g.globalAlpha;gt(o.x,o.y,o.z||0,dpr,'i');g.globalAlpha=a0*.85;g.fillStyle=o.c;g.fillRect(...r);g.globalAlpha=a0;g.lineWidth=I[sel]===o?.09:.04;g.strokeStyle=I[sel]===o?'#ffb300':'rgba(0,0,0,.55)';g.strokeRect(...r);g.setTransform(dpr,0,0,dpr,0,0)}
 else if(o.t=='poly'){path(o.pts.map(q=>[q[0],q[1],o.z||0]));g.fill();g.strokeStyle=I[sel]===o?'#ffb300':'rgba(0,0,0,.55)';g.lineWidth=I[sel]===o?2.5:1.5;g.stroke();if(o.lb){const c=anc(o);gt(c[0],c[1],o.z||0,dpr,'i');lbl(o.lb,0,1.3);g.setTransform(dpr,0,0,dpr,0,0)}}
 else if(o.t=='arr'){path(arrowPts(o).map(q=>[q[0],q[1],(o.z||0)+.02]));g.fill();g.strokeStyle='rgba(0,0,0,.35)';g.lineWidth=1;g.stroke()}
@@ -185,13 +186,19 @@ if(dr)$('dw').value=o.len||1}}
 function inPoly(pt,a){let r=0;for(let i=0,j=a.length-1;i<a.length;j=i++)if((a[i][1]>pt[1])!=(a[j][1]>pt[1])&&pt[0]<(a[j][0]-a[i][0])*(pt[1]-a[i][1])/(a[j][1]-a[i][1])+a[i][0])r=!r;return r}
 function hit(px,py){const bs=I.map((o,i)=>({o,i})).sort((a,b)=>(a.o.t=='box'?(tp()?a.o.z+a.o.h:key(a.o)):99999)-(b.o.t=='box'?(tp()?b.o.z+b.o.h:key(b.o)):99999));
 for(let k=bs.length;k--;){const{o,i}=bs[k];
-if(o.t=='box'){for(const f of faces(o).reverse())if(inPoly([px,py],f.p.map(q=>P(...q))))return{i,f:f.f,c:cellAt(o,f.f,px,py)}}
+// Match hit testing to rendering when other floors are hidden.
+if(floorView==='hide'&&o.t!=='box'&&Math.floor(o.z||0)!==lv)continue;
+if(o.t=='box'){for(const f of faces(o).reverse()){if(!inPoly([px,py],f.p.map(q=>P(...q))))continue;const c=cellAt(o,f.f,px,py);
+if(floorView==='hide'&&(f.f==='t'?o.z+o.h-1!==lv:o.z+c.j!==lv))continue;
+return{i,f:f.f,c}}}
 else if(o.t=='sq'){if(inPoly([px,py],sqPts(o).map(q=>P(...q))))return{i}}
 else if(o.t=='poly'){if(inPoly([px,py],o.pts.map(q=>P(q[0],q[1],o.z||0))))return{i}}
 else if(o.t=='door'){const L=o.len||1,c=o.o=='h'?[[o.x,o.y-.2],[o.x+L,o.y-.2],[o.x+L,o.y+.2],[o.x,o.y+.2]]:[[o.x-.2,o.y],[o.x+.2,o.y],[o.x+.2,o.y+L],[o.x-.2,o.y+L]];if(inPoly([px,py],c.map(q=>P(q[0],q[1],o.z||0))))return{i}}
 else if(o.t=='arr'){if(inPoly([px,py],arrowPts(o).map(q=>P(q[0],q[1],(o.z||0)+.02))))return{i}}
 else{const[sx,sy]=P(o.x,o.y,o.z||0);if(Math.hypot(sx-px,sy-py)<(o.t=='icon'?20*(o.sz||1):16)*view.s+8)return{i}}}return null}
-function setLv(k){lv=cl(k,S.z);$('lv').textContent='Level '+lv;draw()}
+function setLv(k){lv=cl(k,S.z);$('lv').textContent='Level '+lv;
+if(floorView==='hide'&&sel!=null&&I[sel]){const o=I[sel],z=Math.floor(o.z||0),visible=o.t==='box'?lv>=o.z&&lv<o.z+o.h:o.t==='sq'?Math.floor(o.z0||0)===lv:z===lv;if(!visible){sel=null;cell=null}}
+draw()}
 function fit(){const w=cv.clientWidth||800,h=cv.clientHeight||500;
 if(tp()){view.s=Math.min(3,w*.85/(S.x*TW),h*.85/(S.y*TW));view.x=w/2-S.x*TW*view.s/2;view.y=h/2-S.y*TW*view.s/2}
 else{const W=(S.x+S.y)*TW,Hh=(S.x+S.y)*TH+S.z*Z;view.s=Math.min(2,w*.85/W,h*.85/Hh);
@@ -311,7 +318,7 @@ const r=document.createElement('div');r.className='row';r.append(mk('Duplicate',
 m.style.display='flex';const w=m.offsetWidth,h=m.offsetHeight;m.style.left=Math.max(4,Math.min(x,innerWidth-w-4))+'px';m.style.top=Math.max(4,Math.min(y,innerHeight-h-4))+'px'}function del(){if(sel!=null){push();I.splice(sel,1);sel=null;cell=null;draw()}}
 $('undo').onclick=undo;$('redo').onclick=redo;$('del').onclick=del;$('clr').onclick=()=>{push();I=[];sel=null;cell=null;pd=null;draw()};
 $('grid').onclick=e=>{grid=!grid;e.target.classList.toggle('on',grid);draw()};
-$('slice').onclick=()=>{slice=!slice;sync()};
+$('slice').onclick=()=>{floorView=floorView==='fade'?'all':'fade';slice=floorView!=='all';const f=$('floorView');if(f)f.value=floorView;sync()};
 $('vw').onclick=()=>setMode(tp()?'iso':'top');$('fitb').onclick=fit;$('help').onclick=()=>helpDlg();
 $('snp').onchange=e=>{SN=+e.target.value||.5};
 $('exp').onclick=()=>{draw();cv.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=($('pn').value.trim()||'map')+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)})};
@@ -340,9 +347,9 @@ SHN.forEach(([id,nm,gl])=>{const r=document.createElement('div');r.className='ro
 $('shbtn').onclick=()=>{const m=$('shmenu');$('icmenu').style.display='none';m.style.display=m.style.display=='flex'?'none':'flex'};
 $('file').onchange=e=>{for(const f of e.target.files){const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const w=im.naturalWidth||128,h=im.naturalHeight||128,k=Math.min(1,160/Math.max(w,h)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(w*k));c.height=Math.max(1,Math.round(h*k));c.getContext('2d').drawImage(im,0,0,c.width,c.height);const id='i'+Date.now()+Math.random().toString(36).slice(2,6);ICONS.push({id,name:f.name.replace(/\.[^.]+$/,''),src:c.toDataURL('image/png')});cur=id;tool='icon';iconUI();sync()};im.src=r.result};r.readAsDataURL(f)}e.target.value=''};
 const K2='isoplan-v2',PK='isoplan-projects';let pid=null,savedSnap='',st;
-const state=()=>({I,S,ICONS,cur,shp,lv,grid,slice,gm,sm,col,view,mode,txt:$('txt').value,tm:$('tm').value,dm:$('dm').value}),snap=()=>JSON.stringify([I,S,ICONS]),lazy=()=>{clearTimeout(st);st=setTimeout(save,250)};
+const state=()=>({I,S,ICONS,cur,shp,lv,grid,slice,floorView,gm,sm,col,view,mode,txt:$('txt').value,tm:$('tm').value,dm:$('dm').value}),snap=()=>JSON.stringify([I,S,ICONS]),lazy=()=>{clearTimeout(st);st=setTimeout(save,250)};
 function save(){try{localStorage.setItem(K2,JSON.stringify({...state(),pid,pname:$('pn').value}))}catch(e){}}
-function apply(d){try{if(!d||!Array.isArray(d.I))return false;I=d.I.filter(o=>o.t!='x');ICONS=Array.isArray(d.ICONS)?d.ICONS:[];cur=d.cur||null;S={x:d.S.x,y:d.S.y,z:d.S.z};lv=cl(d.lv|0,S.z);grid=d.grid!==false;slice=d.slice!==false;gm=d.gm||gm;sm=d.sm||sm;col=d.col||col;shp=d.shp||'square';mode=d.mode=='top'?'top':'iso';if(d.view&&d.view.s)view=d.view;
+function apply(d){try{if(!d||!Array.isArray(d.I))return false;I=d.I.filter(o=>o.t!='x');I.forEach(o=>delete o.mg);ICONS=Array.isArray(d.ICONS)?d.ICONS:[];cur=d.cur||null;S={x:d.S.x,y:d.S.y,z:d.S.z};lv=cl(d.lv|0,S.z);grid=d.grid!==false;slice=d.slice!==false;floorView=d.floorView|| (d.slice===false?'all':'fade');gm=d.gm||gm;sm=d.sm||sm;col=d.col||col;shp=d.shp||'square';mode=d.mode=='top'?'top':'iso';if(d.view&&d.view.s)view=d.view;
 $('txt').value=d.txt??'Room A';$('tm').value=d.tm||'s';$('dm').value=d.dm||'i';$('col').value=col;$('sx').value=S.x;$('sy').value=S.y;$('sz').value=S.z;$('grid').classList.toggle('on',grid);$('lv').textContent='Level '+lv;return true}catch(e){return false}}
 function load(){try{const d=JSON.parse(localStorage.getItem(K2));if(!apply(d))return false;pid=d.pid||null;$('pn').value=d.pname||'Untitled';return true}catch(e){return false}}
 ['txt','tm','dm','col'].forEach(id=>$(id).addEventListener('input',save));
@@ -553,7 +560,7 @@ function rotGroup(L,B,d,c){const cs=Math.cos(d),si=Math.sin(d),R=([x,y])=>[c[0]+
 L.forEach((o,i)=>{const b=B[i];if(['poly','arr','txt','icon','dot'].includes(o.t))rotItem(o,b,d,c);if(['txt','icon','dot','cm'].includes(o.t))[o.x,o.y]=R([b.x,b.y])})}
 function scaleGrp(f){const L=live();if(L.length<2)return;push();const c=cen(L),S1=(v,i)=>c[i]+(v-c[i])*f;
 for(const o of L){if(o.t=='poly')o.pts=o.pts.map(q=>[S1(q[0],0),S1(q[1],1)]);else if(o.t=='arr'){o.x=S1(o.x,0);o.y=S1(o.y,1);o.x2=S1(o.x2,0);o.y2=S1(o.y2,1)}
-else if(o.t=='sq'){if(o.f=='t'){const e=E(o);setE(o,[S1(e[0],0),S1(e[1],0),S1(e[2],1),S1(e[3],1)])}}
+else if(o.t=='sq'){if(o.f=='t'){const e=LPX.E(o);setE(o,[S1(e[0],0),S1(e[1],0),S1(e[2],1),S1(e[3],1)])}}
 else if(['txt','icon','dot','cm'].includes(o.t)){o.x=S1(o.x,0);o.y=S1(o.y,1);if(o.t!='cm')o.sz=(o.sz||1)*f}}draw()}
 
 // ---------- group bar + select button ----------
@@ -567,7 +574,7 @@ const opd=cv.onpointerdown;
 cv.onpointerdown=e=>{if(e.button==0&&tool=='sel'){const px=e.offsetX,py=e.offsetY,L=live();
 if(L.length>1&&LPX.rotOn){const c=cen(L);if(ringPts(c).some((a,k,r)=>k&&ds(px,py,r[k-1],a)<12)){push();cv.setPointerCapture(e.pointerId);const a=ang(px,py,c);grd={L,B:L.map(o=>JSON.parse(JSON.stringify(o))),c,p:a,a0:a,d:0,s:0};return}}
 const h=hit(px,py);
-if(e.shiftKey&&h){const A=cur(),o=I[h.i],k=A.indexOf(o);if(k>=0)A.splice(k,1);else A.push(o);setSel(A);draw();return}
+if((e.shiftKey||e.ctrlKey||e.metaKey)&&h){const A=cur(),o=I[h.i],k=A.indexOf(o);if(k>=0)A.splice(k,1);else A.push(o);setSel(A);draw();return}
 if(!h&&(e.shiftKey||bsel)){mq={x0:px,y0:py,x1:px,y1:py,base:e.shiftKey?cur():[]};cv.setPointerCapture(e.pointerId);if(!e.shiftKey){sel=null;ms=new Set()}draw();return}
 if(L.length>1){if(h&&ms.has(I[h.i])){push();const[gx,gy]=G(px,py);gmv={gx,gy,L,B:L.map(o=>JSON.parse(JSON.stringify(o)))};cv.setPointerCapture(e.pointerId);return}ms=new Set()}}
 opd(e)};
@@ -596,7 +603,7 @@ mkn('Width (cells)',0);mkn('Height (cells)',2);m.style.top=Math.max(4,Math.min(p
 
 // ---------- help ----------
 const ohd=helpDlg;helpDlg=function(){ohd();const b=$('mbox'),last=b.lastElementChild;
-[['B','Box select mode (drag on empty space)'],['Shift+click / drag','Add to selection'],['Ctrl+A','Select all'],['Drag a selected item','Move the whole group; R rotates it']].forEach(([a,t])=>{const r=document.createElement('div'),k=document.createElement('kbd'),s=document.createElement('span');r.className='row';k.textContent=a;k.style.minWidth='150px';s.textContent=t;r.append(k,s);b.insertBefore(r,last)})};
+[['B','Box select mode (drag on empty space)'],['Ctrl+click / Shift+click','Add or remove an object from selection'],['Shift+drag','Add to selection'],['Ctrl+A','Select all'],['Drag a selected item','Move the whole group; R rotates it']].forEach(([a,t])=>{const r=document.createElement('div'),k=document.createElement('kbd'),s=document.createElement('span');r.className='row';k.textContent=a;k.style.minWidth='150px';s.textContent=t;r.append(k,s);b.insertBefore(r,last)})};
 
 // ---------- draw / sync ----------
 const od=draw;draw=function(){od();const dpr=devicePixelRatio||1,L=live();g.setTransform(dpr,0,0,dpr,0,0);g.globalAlpha=1;
@@ -681,4 +688,223 @@ cv.addEventListener('pointerup',()=>{td=null;bd=null;draw()});
 sync();
 })();
 
-</script></body></html>
+</script>
+<script>
+/* Level Planr fixes: floor visibility, selection ergonomics, cube context Add menu,
+   contrasting surface colours, and stable 2D shape transforms. */
+(()=>{
+  // Three explicit floor-visibility modes. Old projects continue to load.
+  const level=document.querySelector('#rp details:nth-of-type(3)');
+  if(level){
+    const row=document.createElement('div'); row.className='fld';
+    const label=document.createElement('label'); label.textContent='Other floors'; label.style.flex='1 1 100%';
+    const select=document.createElement('select'); select.id='floorView'; select.style.width='100%';
+    [['all','Show all floors'],['fade','Fade different floors'],['hide','Hide different floors']].forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;select.append(o)});
+    select.value=floorView||'fade'; select.onchange=()=>{floorView=select.value;slice=floorView!=='all';$('slice').classList.toggle('on',slice);draw()};
+    row.append(label,select); const old=$('slice').parentElement; old.after(row);
+  }
+  // Click an existing item while using a geometry creation tool: select it instead of
+  // accidentally placing another item on top. Annotation tools (comments, icons, text, dots)
+  // deliberately bypass this so they can be placed over existing objects.
+  let addingToCube=false;
+  const priorDown=cv.onpointerdown;
+  cv.onpointerdown=function(e){
+    if(e.button===0 && !addingToCube && !['sel','del','poly','sq','cm','icon','txt','dot'].includes(tool)){
+      const h=hit(e.offsetX,e.offsetY);
+      if(h){tool='sel';sel=h.i;cell=sm==='face'&&h.c?h.c:null;sync();}
+    }
+    if(addingToCube&&e.button===0)addingToCube=false;
+    priorDown.call(this,e);
+  };
+  // Ensure the selected colour picker tracks the active selection after auto-select.
+  const oldSync=sync; sync=function(){oldSync();if(sel!=null&&I[sel]&&I[sel].c)$('col').value=I[sel].c};
+
+  // A shape drawn on a cube should remain legible. Use a hue-shifted colour
+  // only when the requested colour is effectively the same as the host cube.
+  const hexRgb=h=>{const n=parseInt((h||'#3b9ae1').replace('#',''),16);return[(n>>16)&255,(n>>8)&255,n&255]};
+  const dist=(a,b)=>Math.sqrt(a.reduce((v,x,i)=>v+(x-b[i])**2,0));
+  const contrast=c=>{const [r,g,b]=hexRgb(c);let hsl=(function(){const R=r/255,G=g/255,B=b/255,ma=Math.max(R,G,B),mi=Math.min(R,G,B),d=ma-mi;let h=0,s=ma===0?0:d/(1-Math.abs(2*((ma+mi)/2)-1)),l=(ma+mi)/2;if(d){if(ma===R)h=((G-B)/d)%6;else if(ma===G)h=(B-R)/d+2;else h=(R-G)/d+4;h*=60;if(h<0)h+=360}return[h,s,l]})();
+    hsl[0]=(hsl[0]+155)%360;hsl[1]=Math.max(.65,hsl[1]);hsl[2]=hsl[2]>.55?.32:.78;
+    const C=(1-Math.abs(2*hsl[2]-1))*hsl[1],X=C*(1-Math.abs((hsl[0]/60)%2-1)),m=hsl[2]-C/2;let q=hsl[0]<60?[C,X,0]:hsl[0]<120?[X,C,0]:hsl[0]<180?[0,C,X]:hsl[0]<240?[0,X,C]:hsl[0]<300?[X,0,C]:[C,0,X];return '#'+q.map(v=>Math.round((v+m)*255).toString(16).padStart(2,'0')).join('')};
+  const priorPointer=cv.onpointerdown;
+  cv.onpointerdown=function(e){
+    if(e.button===0&&tool==='sq'){
+      const h=hit(e.offsetX,e.offsetY);
+      if(h&&h.c&&I[h.i]&&I[h.i].t==='box'){
+        const host=I[h.i],same=dist(hexRgb(col),hexRgb(host.c))<55;
+        if(same){col=contrast(host.c);$('col').value=col}
+      }
+    }
+    priorPointer.call(this,e);
+  };
+
+  // Extend cube's context menu with an Add submenu. Choosing an item switches
+  // to that tool; the next click places it at the selected cube's face/level.
+  const oldCtx=showCtx;
+  showCtx=function(i,x,y){oldCtx(i,x,y);const o=I[i],m=$('ctx');if(!o||o.t!=='box'||m.style.display!=='flex')return;
+    const head=document.createElement('b');head.textContent='Add to cube';head.style.marginTop='4px';m.insertBefore(head,m.lastElementChild);
+    const add=(name,fn)=>{const b=mk(name,()=>{closeCtx();fn()});b.style.textAlign='left';m.insertBefore(b,m.lastElementChild)};
+    add('Shape…',()=>{addingToCube=true;tool='sq';sync();toast('Choose a shape, then draw on a cube face')});
+    add('Icon',()=>{addingToCube=true;tool='icon';if(!cur)$('file').click();sync()});
+    add('Text',()=>{addingToCube=true;tool='txt';sync();toast('Click the cube face to place text')});
+    add('Dot',()=>{addingToCube=true;tool='dot';sync()});
+    add('Arrow',()=>{addingToCube=true;tool='arr';sync()});
+    m.style.top=Math.max(4,Math.min(parseFloat(m.style.top),innerHeight-m.offsetHeight-4))+'px';
+  };
+
+  // Avoid the old global slice toggle overwriting the three-state selector.
+  const oldDraw=draw;draw=function(){oldDraw();const f=$('floorView');if(f&&f.value!==floorView)f.value=floorView};
+  // Save floor mode in the existing project state object for persistence.
+  const stateRef=state; // lexical function is available from the original script
+  const oldState=stateRef;
+  // State is a function declaration in the main script; wrap it through the
+  // global lexical binding is not writable, so persist the setting in local storage
+  // alongside the normal autosave snapshot.
+  const oldSave=save;
+  save=function(){oldSave();try{const d=JSON.parse(localStorage.getItem('isoplan-v2')||'{}');d.floorView=floorView;localStorage.setItem('isoplan-v2',JSON.stringify(d))}catch(e){}};
+  sync();
+})();
+</script>
+
+<style id="dropdown-contrast-fix">
+/* Keep native option text readable in both light and dark themes. */
+select, select option, #ctx select { color:var(--t) !important; background-color:var(--p) !important; }
+/* Keep the custom Shapes and Icons menu labels readable without hover. */
+#shmenu button, #icmenu button { color:var(--t) !important; background-color:var(--p) !important; }
+#shmenu button:hover, #icmenu button:hover { color:var(--t) !important; background-color:var(--h) !important; }
+</style>
+
+<style id="professional-ui">
+:root{--panel-shadow:0 1px 2px rgba(15,23,42,.06);--focus:rgba(47,143,209,.28)}
+#hd{gap:7px;padding:8px 10px;min-height:42px;box-sizing:border-box}
+#hd>b{font-size:14px;letter-spacing:-.02em}
+#hd button{min-height:30px;white-space:nowrap}
+#hd .sep{margin:0 3px;height:24px}
+#left{width:148px;padding:12px 9px;gap:15px}
+#left>div{min-width:0}
+#left .lab{font-size:10px;font-weight:700;letter-spacing:.1em;margin:0 0 6px 5px}
+#left button{min-height:34px;padding:7px 9px;border-radius:7px}
+#left button:hover,#hd button:hover,#rp button:hover{border-color:var(--a);background:var(--h,rgba(47,143,209,.09))}
+#left button.on,#hd button.on{background:var(--a);color:#fff;border-color:var(--a)}
+#rp{width:252px;padding:0 0 12px}
+#rp details{padding:10px 12px}
+#rp summary{padding:3px 0 5px;font-size:10.5px;font-weight:750;letter-spacing:.09em;text-transform:uppercase;opacity:.78}
+#rp .fld{margin-top:9px;gap:8px}
+#rp input,#rp select,#rp button{min-height:30px}
+#rp input[type=number]{min-width:48px}
+#rp button{border-radius:7px}
+#rp input:focus-visible,#rp select:focus-visible,#rp button:focus-visible,#hd button:focus-visible,#left button:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
+#shmenu,#icmenu{z-index:30;box-shadow:0 12px 28px rgba(0,0,0,.2)}
+#ctx{z-index:40}
+#mod{z-index:50}
+.inspector{padding:12px;border-bottom:1px solid var(--b);background:linear-gradient(180deg,rgba(47,143,209,.075),transparent)}
+.inspector-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
+.inspector-head .lab{margin:0 0 3px}
+.inspector-head b{font-size:13px}
+.inspector-empty{font-size:11px;opacity:.55}
+.inspector-body{display:flex;flex-direction:column;gap:9px}
+.inspector-note{font-size:11px;line-height:1.45;opacity:.68}
+.inspector-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.inspector-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.inspector-field span{font-size:10px;opacity:.72}
+.inspector-field input,.inspector-field select{width:100%;min-width:0;box-sizing:border-box}
+.inspector-wide{grid-column:1/-1}
+.inspector-type{font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:var(--a)}
+.inspector-actions{display:flex;gap:6px}
+.inspector-actions button{flex:1}
+@media(max-width:760px){
+ #left{gap:8px;padding:8px}
+ #left>div{min-width:112px}
+ #rp{width:auto;max-height:42%;overflow:auto}
+ .inspector{padding:9px 12px}
+}
+</style>
+
+
+<script id="contextual-inspector">
+(()=>{
+ const panel=$('contextPanel');
+ if(!panel)return;
+ const titleFor=o=>({box:'Cube',sq:'Shape',poly:'Custom shape',arr:'Arrow',door:'Door',txt:'Text',dot:'Dot',icon:'Icon',cm:'Comment'}[o.t]||'Object');
+ const finite=(v,d)=>Number.isFinite(+v)?+v:d;
+ const field=(label,value,{step='.25',min='-1000',max='1000',wide=false,onchange}={})=>{
+   const wrap=document.createElement('label');wrap.className='inspector-field'+(wide?' inspector-wide':'');
+   const cap=document.createElement('span');cap.textContent=label;
+   const input=document.createElement('input');input.type='number';input.step=step;input.min=min;input.max=max;input.value=Number.isFinite(+value)?(+value).toFixed(2).replace(/\.00$/,''):'';
+   input.addEventListener('change',()=>{const n=Number(input.value);if(!Number.isFinite(n)){input.value=value;return}onchange(n)});
+   wrap.append(cap,input);return wrap;
+ };
+ const textField=(label,value,onchange)=>{
+   const wrap=document.createElement('label');wrap.className='inspector-field inspector-wide';
+   const cap=document.createElement('span');cap.textContent=label;
+   const input=document.createElement('input');input.type='text';input.value=value||'';
+   input.addEventListener('change',()=>onchange(input.value));wrap.append(cap,input);return wrap;
+ };
+ const section=(name)=>{const e=document.createElement('div');e.className='inspector-type';e.textContent=name;return e};
+ const colorField=o=>{
+   const w=document.createElement('label');w.className='inspector-field inspector-wide';
+   const l=document.createElement('span');l.textContent='Object colour';
+   const c=document.createElement('input');c.type='color';c.value=o.c||'#3b9ae1';c.addEventListener('change',()=>{push();o.c=c.value;draw()});w.append(l,c);return w;
+ };
+ function render(){
+   const o=sel!=null?I[sel]:null;
+   panel.replaceChildren();
+   const head=document.createElement('div');head.className='inspector-head';
+   const left=document.createElement('div'),lab=document.createElement('div'),name=document.createElement('b'),badge=document.createElement('span');
+   lab.className='lab';lab.textContent='Inspector';name.textContent=o?titleFor(o):'Nothing selected';
+   left.append(lab,name);badge.className='inspector-empty';badge.textContent=o?'Selected':'—';head.append(left,badge);panel.append(head);
+   const body=document.createElement('div');body.className='inspector-body';panel.append(body);
+   if(!o){const note=document.createElement('div');note.className='inspector-note';note.textContent='Select an object on the canvas to inspect its properties. Right-click an object for its quick actions.';body.append(note);return}
+   body.append(section('Object'));
+   const meta=document.createElement('div');meta.className='inspector-note';meta.textContent='Type: '+titleFor(o)+'  ·  Floor: '+(Math.floor(o.z||o.k||0));body.append(meta);
+   const grid=document.createElement('div');grid.className='inspector-grid';body.append(grid);
+   const update=(fn)=>{push();fn();draw()};
+   const xy=(axis,n)=>{
+     const a=anc(o),delta=n-a[axis];
+     if(Math.abs(delta)<1e-8)return;
+     if(o.t==='box'){o[axis===0?'x':'y']=cl(o[axis===0?'x':'y']+delta,axis===0?S.x-o.w:S.y-o.d)}
+     else if(o.t==='poly')o.pts=o.pts.map(q=>{const r=q.slice();r[axis]+=delta;return r});
+     else if(o.t==='arr'){if(axis===0){o.x+=delta;o.x2+=delta}else{o.y+=delta;o.y2+=delta}}
+     else if(o.t==='sq'&&o.f==='t'){const e=LPX.E(o).slice(),j=axis===0?0:2;e[j]+=delta;e[j+1]+=delta;LPX.setE(o,e)}
+     else if(o.t==='sq'&&o.f==='l'&&axis===0){const e=E(o).slice();e[0]+=delta;e[1]+=delta;setE(o,e)}
+     else if(o.t==='sq'&&o.f==='r'&&axis===1){const e=E(o).slice();e[2]+=delta;e[3]+=delta;setE(o,e)}
+     else if(['txt','dot','icon','door','cm'].includes(o.t))o[axis===0?'x':'y']+=delta;
+   };
+   const a=anc(o);
+   if(o.t!=='sq'||o.f==='t'){
+     grid.append(field('X',a[0],{onchange:n=>update(()=>xy(0,n))}));
+     grid.append(field('Y',a[1],{onchange:n=>update(()=>xy(1,n))}));
+   }
+   if(o.t==='box'){
+     grid.append(field('Base level',o.z,{min:'0',max:String(S.z-1),step:'1',onchange:n=>update(()=>o.z=cl(Math.round(n),S.z-o.h))}));
+     grid.append(field('Width',o.w,{min:'.1',onchange:n=>update(()=>o.w=Math.max(.1,Math.min(n,S.x-o.x)))}));
+     grid.append(field('Depth',o.d,{min:'.1',onchange:n=>update(()=>o.d=Math.max(.1,Math.min(n,S.y-o.y)))}));
+     grid.append(field('Height',o.h,{min:'.1',onchange:n=>update(()=>o.h=Math.max(.1,Math.min(n,S.z-o.z)))}));
+   }else if(o.t==='sq'){
+     grid.append(field('Plane level',o.k,{min:'0',max:String(S.z),step:'.25',onchange:n=>update(()=>o.k=cl(n,S.z))}));
+     const e=LPX.E(o);
+     grid.append(field('Width',e[1]-e[0],{min:'.05',onchange:n=>update(()=>{const q=LPX.E(o).slice();q[1]=q[0]+Math.max(.05,n);LPX.setE(o,q)})}));
+     grid.append(field('Depth',e[3]-e[2],{min:'.05',onchange:n=>update(()=>{const q=LPX.E(o).slice();q[3]=q[2]+Math.max(.05,n);LPX.setE(o,q)})}));
+   }else if(o.t==='arr'){
+     grid.append(field('End X',o.x2,{onchange:n=>update(()=>o.x2=n)}));
+     grid.append(field('End Y',o.y2,{onchange:n=>update(()=>o.y2=n)}));
+   }else if(o.t==='door'){
+     grid.append(field('Width',o.len||1,{min:'1',max:'4',step:'1',onchange:n=>update(()=>o.len=cl(Math.round(n),4)||1)}));
+   }else if(o.t==='poly'){
+     const n=document.createElement('div');n.className='inspector-note inspector-wide';n.textContent=(o.pts||[]).length+' vertices';grid.append(n);
+   }
+   if(o.t==='txt')body.append(textField('Text',o.s,v=>update(()=>o.s=v)));
+   else if(['dot','icon','poly'].includes(o.t)&&o.lb!==undefined)body.append(textField('Label',o.lb,v=>update(()=>o.lb=v)));
+   body.append(section('Appearance'),colorField(o));
+   const actions=document.createElement('div');actions.className='inspector-actions';
+   const duplicate=mk('Duplicate',()=>{dup();render()});const remove=mk('Delete',()=>{del();render()});
+   actions.append(duplicate,remove);body.append(actions);
+ }
+ const oldDraw=draw;draw=function(){oldDraw();render()};
+ const oldSync=sync;sync=function(){oldSync();render()};
+ render();
+})();
+</script>
+
+
+</body></html>
