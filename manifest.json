@@ -1,0 +1,11 @@
+{
+  "name": "Level Planr",
+  "short_name": "Level Planr",
+  "description": "Isometric and top-down level planner for game designers",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f1f3f6",
+  "theme_color": "#2f8fd1",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
