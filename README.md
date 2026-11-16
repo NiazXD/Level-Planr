@@ -4,9 +4,8 @@ A browser-based planning tool for level designers. Block out a level in **isomet
 
 ## Running it
 
-- **Locally:** open `index.html` in a browser.
-- **Hosted (GitHub Pages):** repo **Settings → Pages → Deploy from branch → `main` / root**. The site appears at `https://<username>.github.io/Level-Planr/`.
-- **As an app:** in a supported browser, use *Install* / *Add to Home Screen*. It works offline after the first visit.
+- https://niazxd.github.io/Level-Planr/
+Run this website
 
 ## Getting started
 
