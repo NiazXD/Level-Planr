@@ -371,4 +371,314 @@ const had=load();if(!had)I=[{t:'box',x:2,y:2,z:0,w:3,d:2,h:1,c:'#3b9ae1'},{t:'ar
 const pp=pid&&plist().find(x=>x.id==pid);savedSnap=pp?JSON.stringify([pp.data.I,pp.data.S,pp.data.ICONS]):(had?'':snap());
 iconUI();shapeUI();sync();if(!had||tp())setTimeout(fit,30);
 if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script><script>
+/* Level Planr extras: rotate gizmo (R), vertex snap (B), comment pins (C), text on any shape (right-click), UI polish.
+   Load this file after the main script (a script tag with src="levelplanr-extras.js", placed just before the closing body tag). */
+(()=>{
+const CSS=`
+:root{--bg:#eceff3;--p:#f9fafc;--t:#1b2430;--b:#d3d9e1;--a:#3b82f6;--h:rgba(59,130,246,.10);--r:7px}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#13161b;--p:#1c2027;--t:#e4e8ef;--b:#2f3641;--a:#4f94ff;--h:rgba(79,148,255,.15)}}
+:root[data-theme="dark"]{--bg:#13161b;--p:#1c2027;--t:#e4e8ef;--b:#2f3641;--a:#4f94ff;--h:rgba(79,148,255,.15)}
+html,body{font:12.5px/1.35 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+button,select,input[type=text],input[type=number]{border-radius:var(--r);background:var(--p);transition:background .12s,border-color .12s,box-shadow .12s,transform .06s}
+button:hover,select:hover{background:var(--h);border-color:var(--a)}
+button:active{transform:translateY(1px)}
+button.on{background:var(--a);color:#fff;border-color:var(--a);box-shadow:0 0 0 3px var(--h)}
+:is(button,input,select,textarea):focus-visible{outline:2px solid var(--a);outline-offset:1px}
+#hd{box-shadow:0 1px 0 var(--b),0 4px 14px rgba(0,0,0,.05);padding:7px 10px;gap:6px}
+#hd>b{letter-spacing:.02em}
+#left{width:150px;gap:14px;padding:10px}
+.lab{font-size:10px;font-weight:600;letter-spacing:.1em;opacity:.55}
+#left button{padding:6px 9px}
+#left button kbd{opacity:.5;background:var(--bg);border:1px solid var(--b);border-radius:4px}
+#left button.on kbd{background:rgba(255,255,255,.2);border-color:transparent;opacity:.9;color:#fff}
+#rp{width:222px}
+#rp details{padding:9px 12px}
+#rp summary{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;opacity:.7;margin-bottom:4px}
+#ctx,#mbox{border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.3)}
+#ctx{animation:lpop .1s ease-out}@keyframes lpop{from{opacity:0;transform:scale(.96)}}
+#hint{box-shadow:0 4px 16px rgba(0,0,0,.18)}
+#sb{position:absolute;left:10px;bottom:10px;z-index:5;pointer-events:none;background:var(--p);border:1px solid var(--b);border-radius:999px;padding:3px 12px;font:11px ui-monospace,Menlo,monospace;opacity:.92;white-space:nowrap}
+#cmc{position:absolute;z-index:7;display:none;flex-direction:column;gap:7px;width:max-content;min-width:250px;max-width:92%;max-height:86%;overflow:auto;padding:9px;background:var(--p);border:1px solid var(--b);border-top:3px solid #ffb300;border-radius:12px;box-shadow:0 14px 38px rgba(0,0,0,.3)}
+#cmc .ch{display:flex;justify-content:space-between;align-items:center;gap:8px}
+#cmc textarea{width:270px;height:120px;min-width:220px;min-height:70px;max-width:640px;resize:both;box-sizing:border-box;font:inherit;color:var(--t);background:var(--bg);border:1px solid var(--b);border-radius:8px;padding:8px}
+#cmc .ci{display:flex;flex-wrap:wrap;gap:6px}#cmc .ci div{position:relative}
+#cmc .ci img{display:block;max-width:270px;max-height:200px;object-fit:contain;border-radius:8px;border:1px solid var(--b)}
+#cmc .ci button{position:absolute;top:4px;right:4px;padding:0 6px;opacity:.85}
+*{scrollbar-width:thin}`;
+const st=document.createElement('style');st.textContent=CSS;document.head.append(st);
+
+const RT=['poly','arr','txt','icon','dot','sq'],LB=['box','sq','arr','door'],PI=Math.PI,wrap=x=>Math.atan2(Math.sin(x),Math.cos(x));
+let rotOn=false,vsnap=false,rd=null,snapHit=null,pend=0,cur2=null;
+
+// ---------- UI ----------
+const rotb=document.createElement('button');rotb.textContent='Rotate';rotb.title='Rotate gizmo (R): drag the ring. Shift = 15° steps. With vertex snap on it aims at other vertices and aligns edges (Ctrl inverts).';
+rotb.onclick=()=>{rotOn=true;gm='off';sync()};document.querySelector('[data-g="scale"]').after(rotb);
+document.querySelectorAll('[data-g]').forEach(b=>b.addEventListener('click',()=>{rotOn=false;sync()}));
+const vsb=document.createElement('button');vsb.textContent='🧲 Vertex snap';vsb.title='Snap moved items and the edges of moved or scaled shapes to other items\u2019 vertices (Shift+B). Hold Ctrl while dragging to invert.';
+vsb.onclick=()=>{vsnap=!vsnap;sync()};$('fitb').after(vsb);
+$('snp').insertAdjacentHTML('beforeend','<option value=".01">Snap: Free</option>');
+{const b=document.createElement('button'),a=document.createElement('span'),k=document.createElement('kbd');a.textContent='💬 Comment';k.textContent='C';b.append(a,k);b.dataset.t='cm';
+b.title='Comment tool (C): click to drop a note pin, then type text or paste/drop images';b.onclick=()=>{tool='cm';sync()};const gp=$('g-ann');gp.insertBefore(b,gp.querySelector('.dd'))}
+const sb=document.createElement('div');sb.id='sb';$('wrap').append(sb);
+
+// ---------- comment card ----------
+const cd=document.createElement('div');cd.id='cmc';
+cd.innerHTML='<div class="ch"><b>💬 Comment</b><span><button class="ai" title="Attach image">🖼 Image</button> <button class="xx" title="Close">✕</button></span></div><textarea placeholder="Write a note… (paste or drop images here)"></textarea><div class="ci"></div>';
+$('wrap').append(cd);
+const ta=cd.querySelector('textarea'),ci=cd.querySelector('.ci'),fi=document.createElement('input');fi.type='file';fi.accept='image/*';fi.multiple=true;fi.hidden=true;cd.append(fi);
+function imgs(){ci.textContent='';(cur2.imgs||[]).forEach((s,i)=>{const w=document.createElement('div'),im=document.createElement('img'),x=document.createElement('button');im.src=s;x.textContent='✕';x.title='Remove image';x.onclick=()=>{push();cur2.imgs.splice(i,1);imgs();lazy()};w.append(im,x);ci.append(w)})}
+function addImg(f){if(!f||!f.type.startsWith('image/'))return;const o=cur2,r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,640/Math.max(im.naturalWidth,im.naturalHeight)),c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*k)||1;c.height=Math.round(im.naturalHeight*k)||1;c.getContext('2d').drawImage(im,0,0,c.width,c.height);push();(o.imgs=o.imgs||[]).push(c.toDataURL('image/jpeg',.82));if(cur2===o)imgs();lazy()};im.src=r.result};r.readAsDataURL(f)}
+ta.oninput=()=>{cur2.body=ta.value;lazy();draw()};ta.onfocus=()=>push();
+ta.onpaste=e=>{for(const it of e.clipboardData.items)if(it.type.startsWith('image/')){addImg(it.getAsFile());e.preventDefault()}};
+cd.ondragover=e=>e.preventDefault();cd.ondrop=e=>{e.preventDefault();[...e.dataTransfer.files].forEach(addImg)};
+cd.querySelector('.ai').onclick=()=>fi.click();fi.onchange=e=>{[...e.target.files].forEach(addImg);e.target.value=''};
+cd.querySelector('.xx').onclick=()=>{sel=null;draw()};cd.onkeydown=e=>e.stopPropagation();
+
+// ---------- geometry helpers ----------
+const VX=o=>{const z=o.z||0;if(o.t=='box'){const r=[];for(const a of[0,o.w])for(const b of[0,o.d])for(const c of[0,o.h])r.push([o.x+a,o.y+b,o.z+c]);return r}
+if(o.t=='poly')return o.pts.map(q=>[q[0],q[1],z]);if(o.t=='arr')return[[o.x,o.y,z],[o.x2,o.y2,z]];if(o.t=='sq')return sqPts(o);
+if(o.t=='door'){const L=o.len||1;return o.o=='h'?[[o.x,o.y,z],[o.x+L,o.y,z]]:[[o.x,o.y,z],[o.x,o.y+L,z]]}return[[o.x,o.y,z]]};
+const ang=(px,py,c)=>{const q=G(px,py,c[2]);return Math.atan2(q[1]-c[1],q[0]-c[0])};
+const ringPt=(c,rho,a)=>P(c[0]+rho*Math.cos(a),c[1]+rho*Math.sin(a),c[2]);
+const rho=()=>80/(TW*view.s*(tp()?1:1.414)),ringPts=c=>Array.from({length:73},(_,k)=>ringPt(c,rho(),k*PI/36));
+function rotItem(o,b,d,c){const cs=Math.cos(d),si=Math.sin(d),R=([x,y])=>[c[0]+(x-c[0])*cs-(y-c[1])*si,c[1]+(x-c[0])*si+(y-c[1])*cs];
+if(o.t=='poly')o.pts=b.pts.map(R);else if(o.t=='arr'){[o.x,o.y]=R([b.x,b.y]);[o.x2,o.y2]=R([b.x2,b.y2])}else o.rot=(b.rot||0)+d}
+
+// ---------- rotation snap: aim vertices at other vertices, align edges ----------
+function rotSnap(d,bs,c,ex){const A=(x,y)=>Math.atan2(y-c[1],x-c[0]),th=7*PI/180;let best=null,hit=null,bd=th;
+const consider=(cd,h)=>{const dev=Math.abs(wrap(cd-d));if(dev<bd){bd=dev;best=cd;hit=h}},mv=[],me=[],tv=[],te=[0,PI/2];
+const edges=(v,cl2,out)=>{const n=v.length;for(let i=0;i<(cl2?n:n-1);i++){const p=v[i],q=v[(i+1)%n];if(Math.hypot(q[0]-p[0],q[1]-p[1])>1e-6)out.push(Math.atan2(q[1]-p[1],q[0]-p[0]))}};
+for(const b of bs){if(!['poly','arr','sq'].includes(b.t))continue;const v=VX(b);if(v.length>12)continue;v.forEach(q=>mv.push(q));edges(v,b.t!='arr',me)}
+for(const t of I){if(ex.includes(t))continue;const v=VX(t);v.forEach(q=>tv.push(q));if(['poly','sq'].includes(t.t)&&v.length<=12)edges(v,true,te);else if(t.t=='arr')edges(v,false,te)}
+for(const t of tv){if(Math.hypot(t[0]-c[0],t[1]-c[1])<1e-6)continue;const at=A(t[0],t[1]);for(const v of mv){if(Math.hypot(v[0]-c[0],v[1]-c[1])<1e-6)continue;consider(wrap(at-A(v[0],v[1])),t)}}
+for(const a of me)for(const t of te){const b0=wrap(t-a);consider(b0,null);consider(wrap(b0+PI),null)}
+return{d:best==null?d:d+wrap(best-d),hit}}
+
+// ---------- vertex snap ----------
+function vsnapApply(e){snapHit=null;const o=I[sel];if(!drag||!o||!['mv','pv','ae'].includes(drag.k)||vsnap==(e.ctrlKey||e.metaKey))return;
+const z=o.z||0,mine=drag.k=='pv'?[[o.pts[drag.i][0],o.pts[drag.i][1],z]]:drag.k=='ae'?[drag.e?[o.x2,o.y2,z]:[o.x,o.y,z]]:VX(o);let best=null;
+for(const m of mine){const a=P(...m);I.forEach((t,j)=>{if(j==sel)return;for(const v of VX(t)){const b=P(...v),d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(d<14&&(!best||d<best.d))best={d,dx:v[0]-m[0],dy:v[1]-m[1],v}}})}
+if(!best)return;snapHit=best.v;const{dx,dy}=best;
+if(drag.k=='pv')o.pts[drag.i]=[o.pts[drag.i][0]+dx,o.pts[drag.i][1]+dy];
+else if(drag.k=='ae'){if(drag.e){o.x2+=dx;o.y2+=dy}else{o.x+=dx;o.y+=dy}}
+else if(o.t=='poly')o.pts=o.pts.map(q=>[q[0]+dx,q[1]+dy]);else{o.x+=dx;o.y+=dy;if(o.x2!=null){o.x2+=dx;o.y2+=dy}}
+draw()}
+
+// ---------- pointer hooks ----------
+const opd=cv.onpointerdown,opm=cv.onpointermove;
+cv.onpointerdown=e=>{if(e.button==0){const px=e.offsetX,py=e.offsetY;
+if(tool=='cm'){const[gx,gy]=G(px,py);push();I.push({t:'cm',x:pl(gx,S.x),y:pl(gy,S.y),z:lv,c:'#ffb300',body:'',imgs:[]});sel=I.length-1;cell=null;tool='sel';sync();setTimeout(()=>ta.focus(),40);return}
+if(rotOn&&tool=='sel'&&I[sel]&&RT.includes(I[sel].t)){const o=I[sel],c=anc(o);
+if(ringPts(c).some((a,k,r)=>k&&ds(px,py,r[k-1],a)<12)){push();cv.setPointerCapture(e.pointerId);const a=ang(px,py,c);rd={b:JSON.parse(JSON.stringify(o)),c,p:a,a0:a,d:0};return}}}
+opd(e)};
+cv.onpointermove=e=>{opm(e);vsnapApply(e)};
+cv.addEventListener('pointermove',e=>{if(!rd)return;const a=ang(e.offsetX,e.offsetY,rd.c);rd.d+=wrap(a-rd.p);rd.p=a;let d=rd.d;if(e.shiftKey)d=Math.round(d/(PI/12))*PI/12;else if(vsnap!=(e.ctrlKey||e.metaKey)){const r=rotSnap(d,[rd.b],rd.c,[I[sel]]);d=r.d;snapHit=r.hit}else snapHit=null;rd.s=d;rotItem(I[sel],rd.b,d,rd.c);draw()});
+cv.addEventListener('pointerup',()=>{rd=null;snapHit=null;draw()});
+
+// ---------- keys (capture so R/B/C win over the built-in handler) ----------
+addEventListener('keydown',e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||e.ctrlKey||e.metaKey||e.altKey)return;const k=e.key.toLowerCase(),stop=()=>{e.preventDefault();e.stopImmediatePropagation()};
+if(k=='r'&&!e.shiftKey){rotOn=true;gm='off';sync();stop();if(I[sel]&&!RT.includes(I[sel].t))toast('Cubes and doors sit on the grid and cannot rotate. Shapes, arrows, labels, icons and custom shapes can.')}else if(k=='b'&&e.shiftKey){vsnap=!vsnap;sync();stop()}else if(k=='c'){tool='cm';sync();stop()}
+else if(!e.shiftKey&&'gsqw'.includes(k)&&k.length==1)rotOn=false},true);
+
+// ---------- right-click: text on any shape + rotate slider ----------
+const osc=showCtx;showCtx=function(i,x,y){osc(i,x,y);const o=I[i],m=$('ctx');if(!o||m.style.display!='flex')return;
+const fld=(lab,el)=>{const l=document.createElement('label');l.className='cf';l.append(lab,el);m.insertBefore(l,m.lastElementChild)};
+if(LB.includes(o.t)){const e=document.createElement('input');e.type='text';e.value=o.lb||'';e.placeholder='Text on shape';e.oninput=()=>{o.lb=e.value;draw()};fld('Text',e)}
+if(RT.includes(o.t)){const b=JSON.parse(JSON.stringify(o)),c=anc(b),e=document.createElement('input');e.type='range';e.min=-180;e.max=180;e.step=5;e.value=0;e.oninput=()=>{rotItem(o,b,e.value*PI/180,c);draw()};fld('Rotate (°)',e)}
+m.style.top=Math.max(4,Math.min(parseFloat(m.style.top),innerHeight-m.offsetHeight-4))+'px'};
+
+// ---------- help dialog ----------
+const ohd=helpDlg;helpDlg=function(){ohd();const b=$('mbox'),last=b.lastElementChild;
+[['R','Rotate gizmo: drag the ring (Shift = 15° steps; vertex snap aligns to other items)'],['Shift+B','Toggle vertex snap (hold Ctrl to invert)'],['C','Comment tool: click to drop a note pin'],['Right-click','Text on any shape, rotate slider']].forEach(([a,t])=>{const r=document.createElement('div'),k=document.createElement('kbd'),s=document.createElement('span');r.className='row';k.textContent=a;k.style.minWidth='150px';s.textContent=t;r.append(k,s);b.insertBefore(r,last)})};
+
+// ---------- draw hook ----------
+const sT=CanvasRenderingContext2D.prototype.setTransform;g.setTransform=function(...a){sT.apply(g,a);if(pend){const r=pend;pend=0;g.rotate(r)}};
+const od=draw;draw=function(){const rs=[];
+for(const o of I)if(o.rot&&['txt','icon','dot'].includes(o.t)&&!(o.t=='txt'&&!tp()&&o.m=='s')){let v=o.m;rs.push([o,()=>v]);Object.defineProperty(o,'m',{configurable:true,enumerable:true,get(){pend=o.rot;return v},set(x){v=x}})}
+try{od()}finally{pend=0;for(const[o,f]of rs)Object.defineProperty(o,'m',{value:f(),writable:true,enumerable:true,configurable:true})}
+extras()};
+const tx=(s,x,y,sz,c,al='center')=>{g.font='bold '+sz+'px system-ui,sans-serif';g.textAlign=al;g.textBaseline='middle';g.lineJoin='round';g.lineWidth=4;g.strokeStyle='#fff';g.strokeText(s,x,y);g.fillStyle=c;g.fillText(s,x,y)};
+const lab=o=>o.t=='box'?P(o.x+o.w/2,o.y+o.d/2,o.z+o.h):o.t=='door'?P(o.o=='h'?o.x+(o.len||1)/2:o.x,o.o=='h'?o.y:o.y+(o.len||1)/2,o.z||0):P(...anc(o));
+function extras(){const dpr=devicePixelRatio||1;g.setTransform(dpr,0,0,dpr,0,0);g.globalAlpha=1;
+for(const o of I){if(o.lb&&LB.includes(o.t)){const[x,y]=lab(o);tx(o.lb,x,y,Math.max(10,13*view.s),'#1d232b')}
+if(o.t=='cm'){const[x,y]=P(o.x,o.y,o.z||0),on=I[sel]===o;g.beginPath();g.arc(x,y,12,0,7);g.fillStyle=o.c||'#ffb300';g.fill();g.lineWidth=on?3:2;g.strokeStyle=on?'#fff':'rgba(0,0,0,.35)';g.stroke();
+g.fillStyle='#1d232b';g.font='bold 13px system-ui';g.textAlign='center';g.textBaseline='middle';g.fillText(o.imgs&&o.imgs.length?'▣':'≡',x,y+.5);
+if(!on&&o.body){const s=o.body.split('\n')[0];tx(s.length>28?s.slice(0,27)+'…':s,x+17,y,12,'#1d232b','left')}}}
+const o=I[sel];
+if(rotOn&&tool=='sel'&&o&&RT.includes(o.t)){const c=anc(o),pts=ringPts(c),p0=P(...c);
+if(rd){g.beginPath();g.moveTo(...p0);for(let k=0;k<=24;k++)g.lineTo(...ringPt(c,rho(),rd.a0+rd.s*k/24));g.closePath();g.fillStyle='rgba(30,102,245,.28)';g.fill();g.beginPath();g.moveTo(...p0);g.lineTo(...ringPt(c,rho(),rd.a0+rd.s));g.strokeStyle='#1e66f5';g.lineWidth=2;g.stroke()}
+g.beginPath();pts.forEach((q,k)=>g[k?'lineTo':'moveTo'](q[0],q[1]));g.strokeStyle='rgba(255,255,255,.9)';g.lineWidth=6;g.stroke();g.strokeStyle='#1e66f5';g.lineWidth=3;g.stroke();
+g.beginPath();g.arc(p0[0],p0[1],4,0,7);g.fillStyle='#1e66f5';g.fill()}
+if(snapHit){const[x,y]=P(...snapHit);g.beginPath();g.arc(x,y,9,0,7);g.strokeStyle='#00c853';g.lineWidth=3;g.stroke();g.beginPath();g.arc(x,y,3,0,7);g.fillStyle='#00c853';g.fill()}
+if(o&&o.t=='cm'&&tool=='sel'){if(cur2!==o){cur2=o;ta.value=o.body||'';imgs()}const[x,y]=P(o.x,o.y,o.z||0),W=$('wrap');cd.style.display='flex';
+cd.style.left=Math.max(6,Math.min(x+18,W.clientWidth-cd.offsetWidth-6))+'px';cd.style.top=Math.max(6,Math.min(y-24,W.clientHeight-cd.offsetHeight-6))+'px'}else{cd.style.display='none';cur2=null}
+sb.textContent=(tool=='cm'?'Comment':T[tool]||'Shape')+'  ·  Gizmo: '+(rotOn?'Rotate':gm=='off'?'off':gm)+'  ·  Vertex snap: '+(vsnap?'ON':'off')+'  ·  '+(SN<.05?'Free':'Grid '+SN)+'  ·  '+Math.round(view.s*100)+'%'+(rd?'  ·  '+Math.round(rd.s*180/PI)+'°':'')+(rotOn&&o&&!RT.includes(o.t)?'  ·  not rotatable':'')}
+
+// ---------- sync hook ----------
+const osy=sync;sync=function(){osy();rotb.classList.toggle('on',rotOn);vsb.classList.toggle('on',vsnap);if(rotOn){const f=document.querySelector('[data-g="off"]');if(f)f.classList.remove('on')}};
+window.LPX={rotItem,ringPts,ringPt,rho,VX,ang,get rotOn(){return rotOn},get vs(){return vsnap},rotSnap,setHit:h=>{snapHit=h}};
+sync();
+})();
+
+</script><script>
+/* Level Planr extras 2: group select (B box select, Shift+click/drag, Ctrl+A) and free fractional shape sizing. Load after levelplanr-extras.js. */
+(()=>{
+const{rotItem,ringPts,ringPt,rho,VX,ang}=LPX,PI=Math.PI;
+let ms=new Set(),bsel=false,mq=null,gmv=null,grd=null;
+const live=()=>[...ms].filter(o=>I.includes(o));
+const E=o=>o.e||[Math.min(o.a0,o.a1),Math.max(o.a0,o.a1)+1,Math.min(o.b0,o.b1),Math.max(o.b0,o.b1)+1];
+function setE(o,b){o.e=b;o.a0=Math.floor(b[0]);o.a1=Math.max(o.a0,Math.ceil(b[1])-1);o.b0=Math.floor(b[2]);o.b1=Math.max(o.b0,Math.ceil(b[3])-1)}
+
+// ---------- free-size shapes ----------
+const osq=sqPts;sqPts=function(o){if(!o.e&&!o.rot)return osq(o);const[x0,x1,y0,y1]=E(o),k=o.k,cx=(x0+x1)/2,cy=(y0+y1)/2,r=o.rot||0,cs=Math.cos(r),si=Math.sin(r),m=(a,b)=>o.f=='t'?[a,b,k]:o.f=='l'?[a,k,b]:[k,a,b];return(SHP[o.sh]||SHP.square).map(([p,q])=>{const a=x0+p*(x1-x0),b=y0+q*(y1-y0);return m(cx+(a-cx)*cs-(b-cy)*si,cy+(a-cx)*si+(b-cy)*cs)})};
+function freeSq(e){const r=drag.o,o=I[sel];if(!o||o.t!='sq')return;const ax=pa(r).indexOf(drag.i);if(ax<0)return;
+const s=sv(drag.v).map(q=>q*view.s),m0=((e.offsetX-drag.px)*s[0]+(e.offsetY-drag.py)*s[1])/(s[0]**2+s[1]**2),w=pa(r)[ax],lim=(r.f=='t'?[S.x,S.y]:r.f=='l'?[S.x,S.z]:[S.y,S.z])[ax],b=E(r).slice(),i0=2*ax,m=Math.round(m0/SN)*SN,cand=[];
+if(LPX.vs!=(e.ctrlKey||e.metaKey))I.forEach((t,j)=>{if(j!=sel)VX(t).forEach(v=>cand.push(v[w]))});
+const near=v=>{let bv=v,bd=.2;for(const c of cand){const d=Math.abs(c-v);if(d<bd){bd=d;bv=c}}return bv};
+if(gm=='scale')b[i0+1]=Math.min(lim,Math.max(b[i0]+.05,near(b[i0+1]+m)));
+else{const len=b[i0+1]-b[i0];let n0=b[i0]+m;const d0=near(n0)-n0,d1=near(n0+len)-(n0+len);n0+=(d0!=0&&(d1==0||Math.abs(d0)<=Math.abs(d1)))?d0:d1;n0=Math.max(0,Math.min(lim-len,n0));b[i0]=n0;b[i0+1]=n0+len}
+setE(o,b);toast((b[1]-b[0]).toFixed(2)+' × '+(b[3]-b[2]).toFixed(2));draw()}
+const opm=cv.onpointermove;cv.onpointermove=e=>{opm(e);if(drag&&drag.k=='gz'&&drag.o&&drag.o.t=='sq')freeSq(e)};
+
+// ---------- selection helpers ----------
+const setSel=L=>{cell=null;if(L.length==1){sel=I.indexOf(L[0]);ms=new Set()}else{sel=null;ms=new Set(L)}};
+const cur=()=>{const L=live();return L.length>1?L:(I[sel]?[I[sel]]:[])};
+const scr=o=>{const p=VX(o).map(q=>P(...q));return[p.reduce((s,q)=>s+q[0],0)/p.length,p.reduce((s,q)=>s+q[1],0)/p.length]};
+const cen=L=>{const a=L.map(anc);return[a.reduce((s,q)=>s+q[0],0)/a.length,a.reduce((s,q)=>s+q[1],0)/a.length,lv]};
+function tr(o,b,dx,dy){if(o.t=='box'){o.x=cl(b.x+Math.round(dx),S.x-b.w);o.y=cl(b.y+Math.round(dy),S.y-b.d)}else if(o.t=='poly')o.pts=b.pts.map(q=>[q[0]+dx,q[1]+dy]);
+else if(o.t=='arr'){o.x=b.x+dx;o.y=b.y+dy;o.x2=b.x2+dx;o.y2=b.y2+dy}else if(o.t=='sq'){if(b.f=='t'){const e=E(b);setE(o,[e[0]+dx,e[1]+dx,e[2]+dy,e[3]+dy])}}
+else if(o.t=='door'){o.x=b.x+Math.round(dx);o.y=b.y+Math.round(dy)}else{o.x=b.x+dx;o.y=b.y+dy}}
+function rotGroup(L,B,d,c){const cs=Math.cos(d),si=Math.sin(d),R=([x,y])=>[c[0]+(x-c[0])*cs-(y-c[1])*si,c[1]+(x-c[0])*si+(y-c[1])*cs];
+L.forEach((o,i)=>{const b=B[i];if(['poly','arr','txt','icon','dot'].includes(o.t))rotItem(o,b,d,c);if(['txt','icon','dot','cm'].includes(o.t))[o.x,o.y]=R([b.x,b.y])})}
+function scaleGrp(f){const L=live();if(L.length<2)return;push();const c=cen(L),S1=(v,i)=>c[i]+(v-c[i])*f;
+for(const o of L){if(o.t=='poly')o.pts=o.pts.map(q=>[S1(q[0],0),S1(q[1],1)]);else if(o.t=='arr'){o.x=S1(o.x,0);o.y=S1(o.y,1);o.x2=S1(o.x2,0);o.y2=S1(o.y2,1)}
+else if(o.t=='sq'){if(o.f=='t'){const e=E(o);setE(o,[S1(e[0],0),S1(e[1],0),S1(e[2],1),S1(e[3],1)])}}
+else if(['txt','icon','dot','cm'].includes(o.t)){o.x=S1(o.x,0);o.y=S1(o.y,1);if(o.t!='cm')o.sz=(o.sz||1)*f}}draw()}
+
+// ---------- group bar + select button ----------
+const gb=document.createElement('div');gb.id='gb';gb.innerHTML='<b></b><button data-a="dup">Duplicate</button><button data-a="sm" title="Scale group down">− Scale</button><button data-a="sp" title="Scale group up">+ Scale</button><button data-a="del">Delete</button><button data-a="clr" title="Clear selection (Esc)">✕</button>';
+$('wrap').append(gb);gb.onclick=e=>{const a=e.target.dataset.a;if(a=='dup')dup();else if(a=='del')del();else if(a=='sm')scaleGrp(.8);else if(a=='sp')scaleGrp(1.25);else if(a=='clr'){ms=new Set();draw()}};
+const st=document.createElement('style');st.textContent='#gb{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:6;display:none;gap:6px;align-items:center;background:var(--p);border:1px solid var(--b);border-radius:999px;padding:5px 10px;box-shadow:0 6px 20px rgba(0,0,0,.2)}#gb b{padding:0 6px;font-size:12px}';document.head.append(st);
+const bb=document.createElement('button'),ba=document.createElement('span'),bk=document.createElement('kbd');ba.textContent='⬚ Box select';bk.textContent='B';bb.append(ba,bk);bb.title='Box select (B): drag on empty space to select several items. Shift+click / Shift+drag adds to the selection, Ctrl+A selects all.';bb.onclick=()=>{bsel=!bsel;sync()};$('g-sel').append(bb);
+
+// ---------- pointer ----------
+const opd=cv.onpointerdown;
+cv.onpointerdown=e=>{if(e.button==0&&tool=='sel'){const px=e.offsetX,py=e.offsetY,L=live();
+if(L.length>1&&LPX.rotOn){const c=cen(L);if(ringPts(c).some((a,k,r)=>k&&ds(px,py,r[k-1],a)<12)){push();cv.setPointerCapture(e.pointerId);const a=ang(px,py,c);grd={L,B:L.map(o=>JSON.parse(JSON.stringify(o))),c,p:a,a0:a,d:0,s:0};return}}
+const h=hit(px,py);
+if(e.shiftKey&&h){const A=cur(),o=I[h.i],k=A.indexOf(o);if(k>=0)A.splice(k,1);else A.push(o);setSel(A);draw();return}
+if(!h&&(e.shiftKey||bsel)){mq={x0:px,y0:py,x1:px,y1:py,base:e.shiftKey?cur():[]};cv.setPointerCapture(e.pointerId);if(!e.shiftKey){sel=null;ms=new Set()}draw();return}
+if(L.length>1){if(h&&ms.has(I[h.i])){push();const[gx,gy]=G(px,py);gmv={gx,gy,L,B:L.map(o=>JSON.parse(JSON.stringify(o)))};cv.setPointerCapture(e.pointerId);return}ms=new Set()}}
+opd(e)};
+cv.addEventListener('pointermove',e=>{const px=e.offsetX,py=e.offsetY;
+if(mq){mq.x1=px;mq.y1=py;const x0=Math.min(mq.x0,px),x1=Math.max(mq.x0,px),y0=Math.min(mq.y0,py),y1=Math.max(mq.y0,py);
+setSel([...new Set([...mq.base,...I.filter(o=>{const q=scr(o);return q[0]>=x0&&q[0]<=x1&&q[1]>=y0&&q[1]<=y1})])]);draw()}
+if(gmv){const[gx,gy]=G(px,py),dx=sn(gx-gmv.gx),dy=sn(gy-gmv.gy);gmv.L.forEach((o,i)=>tr(o,gmv.B[i],dx,dy));draw()}
+if(grd){const a=ang(px,py,grd.c);grd.d+=Math.atan2(Math.sin(a-grd.p),Math.cos(a-grd.p));grd.p=a;{let d=grd.d;if(e.shiftKey)d=Math.round(d/(PI/12))*PI/12;else if(LPX.vs!=(e.ctrlKey||e.metaKey)){const r=LPX.rotSnap(d,grd.B,grd.c,grd.L);d=r.d;LPX.setHit(r.hit)}else LPX.setHit(null);grd.s=d}rotGroup(grd.L,grd.B,grd.s,grd.c);draw()}});
+cv.addEventListener('pointerup',()=>{mq=null;gmv=null;grd=null;draw()});
+
+// ---------- keys / commands ----------
+addEventListener('keydown',e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return;const k=e.key.toLowerCase(),stop=()=>{e.preventDefault();e.stopImmediatePropagation()};
+if((e.ctrlKey||e.metaKey)&&k=='a'){stop();tool='sel';setSel(I.slice());sync();return}
+if(e.ctrlKey||e.metaKey||e.altKey)return;
+if(k=='b'&&!e.shiftKey){stop();bsel=!bsel;sync()}else if(e.key=='Escape'&&ms.size){ms=new Set();draw()}},true);
+const odel=del;del=function(){const L=live();if(L.length>1){push();I=I.filter(o=>!ms.has(o));ms=new Set();sel=null;cell=null;draw()}else odel()};$('del').onclick=del;
+const odup=dup;dup=function(){const L=live();if(L.length>1){push();const n=[];L.forEach(o=>{const c=JSON.parse(JSON.stringify(o));tr(c,o,1,1);if(c.t=='box'&&c.x==o.x&&c.y==o.y)c.x=cl(c.x-1,S.x-c.w);I.push(c);n.push(c)});setSel(n);draw();return}
+const k=I.length;odup();const c=I[I.length-1];if(I.length>k&&c&&c.t=='sq'&&c.e){const b=c.e.slice();b[0]++;b[1]++;setE(c,b);draw()}};
+$('col').addEventListener('input',e=>{const L=live();if(L.length>1){L.forEach(o=>{if(o.t!='icon')o.c=e.target.value});draw()}});
+
+// ---------- right-click: exact size of shapes ----------
+const osc=showCtx;showCtx=function(i,x,y){osc(i,x,y);const o=I[i],m=$('ctx');if(!o||o.t!='sq'||m.style.display!='flex')return;
+const mkn=(lab,ix)=>{const e=document.createElement('input'),l=document.createElement('label');e.type='number';e.step='.01';e.min='.05';e.style.width='100%';e.value=+(E(o)[ix+1]-E(o)[ix]).toFixed(3);
+e.oninput=()=>{const v=+e.value;if(!(v>=.05))return;const b=E(o).slice();b[ix+1]=b[ix]+v;setE(o,b);draw()};l.className='cf';l.append(lab,e);m.insertBefore(l,m.lastElementChild)};
+mkn('Width (cells)',0);mkn('Height (cells)',2);m.style.top=Math.max(4,Math.min(parseFloat(m.style.top),innerHeight-m.offsetHeight-4))+'px'};
+
+// ---------- help ----------
+const ohd=helpDlg;helpDlg=function(){ohd();const b=$('mbox'),last=b.lastElementChild;
+[['B','Box select mode (drag on empty space)'],['Shift+click / drag','Add to selection'],['Ctrl+A','Select all'],['Drag a selected item','Move the whole group; R rotates it']].forEach(([a,t])=>{const r=document.createElement('div'),k=document.createElement('kbd'),s=document.createElement('span');r.className='row';k.textContent=a;k.style.minWidth='150px';s.textContent=t;r.append(k,s);b.insertBefore(r,last)})};
+
+// ---------- draw / sync ----------
+const od=draw;draw=function(){od();const dpr=devicePixelRatio||1,L=live();g.setTransform(dpr,0,0,dpr,0,0);g.globalAlpha=1;
+if(L.length>1){g.setLineDash([5,3]);g.strokeStyle='#ffb300';g.lineWidth=2;
+for(const o of L){const p=VX(o).map(q=>P(...q));if(p.length==1){g.beginPath();g.arc(p[0][0],p[0][1],17,0,7);g.stroke()}else{const xs=p.map(q=>q[0]),ys=p.map(q=>q[1]),x0=Math.min(...xs)-5,y0=Math.min(...ys)-5;g.strokeRect(x0,y0,Math.max(...xs)+5-x0,Math.max(...ys)+5-y0)}}g.setLineDash([]);
+if(LPX.rotOn&&tool=='sel'){const c=cen(L),p0=P(...c),pts=ringPts(c);
+if(grd){g.beginPath();g.moveTo(...p0);for(let k=0;k<=24;k++)g.lineTo(...ringPt(c,rho(),grd.a0+grd.s*k/24));g.closePath();g.fillStyle='rgba(30,102,245,.28)';g.fill()}
+g.beginPath();pts.forEach((q,k)=>g[k?'lineTo':'moveTo'](q[0],q[1]));g.strokeStyle='rgba(255,255,255,.9)';g.lineWidth=6;g.stroke();g.strokeStyle='#1e66f5';g.lineWidth=3;g.stroke();g.beginPath();g.arc(p0[0],p0[1],4,0,7);g.fillStyle='#1e66f5';g.fill()}
+$('sb').textContent+='  ·  '+L.length+' selected'}
+if(mq){const x=Math.min(mq.x0,mq.x1),y=Math.min(mq.y0,mq.y1),w=Math.abs(mq.x1-mq.x0),h=Math.abs(mq.y1-mq.y0);g.fillStyle='rgba(59,130,246,.15)';g.fillRect(x,y,w,h);g.strokeStyle='#3b82f6';g.lineWidth=1;g.strokeRect(x+.5,y+.5,w,h)}
+gb.style.display=L.length>1?'flex':'none';gb.firstChild.textContent=L.length+' selected'};
+const osy=sync;sync=function(){osy();bb.classList.toggle('on',bsel);if(bsel&&tool=='sel')cv.style.cursor='crosshair'};
+Object.assign(LPX,{tr,E,setE,live,cur,setSel,cen});
+sync();
+})();
+
+</script><script>
+/* Level Planr extras 3: 4-direction gizmo in top-down, grab-and-drag moving, floor shapes in isometric, cube height under Cube. Load after levelplanr-extras-2.js. */
+(()=>{
+const{tr,E,setE,VX}=LPX,DV={'+x':[1,0],'-x':[-1,0],'+y':[0,1],'-y':[0,-1]};
+let td=null,bd=null;
+const on=e=>LPX.vs!=(e.ctrlKey||e.metaKey);
+
+// ---------- Cube height lives under the Cube tool ----------
+{const f=$('ch').parentElement,cb=document.querySelector('#left button[data-t="cube"]');f.id='chf';f.firstChild.textContent='Height ';cb.after(f);
+const st=document.createElement('style');st.textContent='#chf{display:flex;justify-content:space-between;align-items:center;margin:0;padding:3px 8px;border:1px solid var(--b);border-radius:7px;background:var(--bg);font-size:11.5px}#chf input{width:50px}';document.head.append(st)}
+
+// ---------- shapes drawn on the floor in isometric view need no cube ----------
+const osok=sqOK;sqOK=function(q,u,v){return q.fl&&q.f=='t'?true:osok(q,u,v)};
+
+// ---------- top-down 4-direction gizmo ----------
+const ohs0=hs0;hs0=function(o){return tp()&&!(sm=='face'&&cell)?[]:ohs0(o)};
+const bbox=o=>{const p=VX(o).map(q=>P(...q)),xs=p.map(q=>q[0]),ys=p.map(q=>q[1]);return[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]};
+const resizable=o=>['box','sq','poly','arr'].includes(o.t);
+function tdH(o){const b=bbox(o),cx=(b[0]+b[2])/2,cy=(b[1]+b[3])/2;let H;
+if(gm=='scale'){if(resizable(o))H=[['+x',[b[2]+14,cy]],['-x',[b[0]-14,cy]],['+y',[cx,b[3]+14]],['-y',[cx,b[1]-14]]];else{const r=Math.max(32,(b[2]-b[0])/2+20);H=[['+x',[cx+r,cy]],['-x',[cx-r,cy]],['+y',[cx,cy+r]],['-y',[cx,cy-r]]]}}
+else H=[['+x',[cx+66,cy]],['-x',[cx-66,cy]],['+y',[cx,cy+66]],['-y',[cx,cy-66]]];return{H,c:[cx,cy],b}}
+const gzOK=o=>o&&tool=='sel'&&gm!='off'&&!LPX.rotOn&&sm=='obj'&&o.t!='door'&&!(gm=='scale'&&o.t=='cm');
+function drawTd(o){const{H,c,b}=tdH(o);g.setLineDash([]);
+if(gm=='scale'&&resizable(o)){g.setLineDash([4,3]);g.strokeStyle='#ffb300';g.lineWidth=1.5;g.strokeRect(b[0],b[1],b[2]-b[0],b[3]-b[1]);g.setLineDash([])}
+else if(o.t!='box'){g.setLineDash([4,3]);g.strokeStyle='#ffb300';g.lineWidth=2;g.beginPath();g.arc(c[0],c[1],18,0,7);g.stroke();g.setLineDash([])}
+for(const[id,q]of H){const d=DV[id],col=id[1]=='x'?'#e53935':'#43a047';g.strokeStyle=g.fillStyle=col;g.lineWidth=3;
+if(gm=='move'){g.beginPath();g.moveTo(c[0]+d[0]*10,c[1]+d[1]*10);g.lineTo(q[0]-d[0]*8,q[1]-d[1]*8);g.stroke();
+g.beginPath();g.moveTo(q[0]+d[0]*10,q[1]+d[1]*10);g.lineTo(q[0]-d[0]*6-d[1]*7,q[1]-d[1]*6+d[0]*7);g.lineTo(q[0]-d[0]*6+d[1]*7,q[1]-d[1]*6-d[0]*7);g.closePath();g.fill()}
+else{g.fillRect(q[0]-6,q[1]-6,12,12);g.strokeStyle='#fff';g.lineWidth=1.5;g.strokeRect(q[0]-6,q[1]-6,12,12)}
+g.font='bold 10px system-ui,sans-serif';g.textAlign='center';g.textBaseline='middle';g.lineWidth=3;g.strokeStyle='#fff';g.fillStyle=col;const lx=q[0]+d[0]*(gm=='move'?24:18),ly=q[1]+d[1]*(gm=='move'?18:16);g.strokeText(id.toUpperCase(),lx,ly);g.fillText(id.toUpperCase(),lx,ly)}
+if(gm=='move'){g.fillStyle='rgba(255,255,255,.95)';g.strokeStyle='#555';g.lineWidth=1.5;g.fillRect(c[0]-5,c[1]-5,10,10);g.strokeRect(c[0]-5,c[1]-5,10,10)}}
+const ogz=gizmo;gizmo=function(){const o=I[sel];if(tp()&&gzOK(o)&&!(sm=='face'&&cell))drawTd(o);else ogz()};
+
+// ---------- pointer ----------
+const opd=cv.onpointerdown;
+cv.onpointerdown=e=>{const px=e.offsetX,py=e.offsetY;
+if(e.button==0&&tool=='sq'&&!tp()){const h=hit(px,py);if(!(h&&h.c)){const[gx,gy]=G(px,py),a=cl(Math.floor(gx),S.x-1),b=cl(Math.floor(gy),S.y-1);push();
+const q={t:'sq',f:'t',k:lv,z0:lv,a0:a,b0:b,a1:a,b1:b,c:col,sh:shp,fl:1};I.push(q);sel=I.length-1;cell=null;drag={k:'sq',o:q};cv.setPointerCapture(e.pointerId);draw();return}}
+if(e.button==0&&tp()&&gzOK(I[sel])&&!(sm=='face'&&cell)){const o=I[sel],{H,c}=tdH(o);
+for(const[id,q]of H){if(gm=='move'?ds(px,py,c,q)<10:Math.hypot(px-q[0],py-q[1])<12){push();cv.setPointerCapture(e.pointerId);td={id,b:JSON.parse(JSON.stringify(o)),px,py,i:sel};return}}}
+opd(e);
+if(e.button==0&&tool=='sel'&&gm=='move'&&sm=='obj'&&!drag&&I[sel]&&(I[sel].t=='box'||(I[sel].t=='sq'&&I[sel].f=='t'))){const o=I[sel],z=o.t=='sq'?o.k:o.z,[gx,gy]=G(px,py,z);bd={i:sel,gx,gy,z,b:JSON.parse(JSON.stringify(o))};cv.setPointerCapture(e.pointerId)}};
+
+const cands=(w,self)=>{const c=[];I.forEach((t,j)=>{if(j!=self)VX(t).forEach(v=>c.push(v[w]))});return c};
+const near=(v,c)=>{let bv=v,bm=.2;for(const x of c){const d=Math.abs(x-v);if(d<bm){bm=d;bv=x}}return bv};
+const shift=(lo,hi,c)=>{const d0=near(lo,c)-lo,d1=near(hi,c)-hi;return(d0!=0&&(d1==0||Math.abs(d0)<=Math.abs(d1)))?d0:d1};
+
+cv.addEventListener('pointermove',e=>{const px=e.offsetX,py=e.offsetY;
+if(bd){const o=I[bd.i];if(!o){bd=null;return}const[gx,gy]=G(px,py,bd.z);let dx=gx-bd.gx,dy=gy-bd.gy;
+if(o.t=='box'){o.x=cl(bd.b.x+Math.round(dx),S.x-bd.b.w);o.y=cl(bd.b.y+Math.round(dy),S.y-bd.b.d)}
+else{dx=sn(dx);dy=sn(dy);const b=E(bd.b);let n=[b[0]+dx,b[1]+dx,b[2]+dy,b[3]+dy];
+if(on(e)){const sx=shift(n[0],n[1],cands(0,bd.i)),sy=shift(n[2],n[3],cands(1,bd.i));n=[n[0]+sx,n[1]+sx,n[2]+sy,n[3]+sy]}setE(o,n)}draw()}
+if(td){const o=I[td.i];if(!o){td=null;return}const b=td.b,id=td.id,ax=id[1]=='x'?0:1,sg=id[0]=='+'?1:-1,u=TW*view.s,dw=(ax?py-td.py:px-td.px)/u,step=o.t=='box'?1:SN,ds2=Math.round(dw/step)*step;
+if(gm=='move'){tr(o,b,ax?0:ds2,ax?ds2:0);
+if(o.t=='sq'&&on(e)){const n=o.e.slice(),s=shift(n[2*ax],n[2*ax+1],cands(ax,td.i));n[2*ax]+=s;n[2*ax+1]+=s;setE(o,n)}}
+else if(o.t=='box'){const k=ax?['y','d']:['x','w'],lim=ax?S.y:S.x;let d=Math.round(dw);
+if(sg>0){d=Math.max(1-b[k[1]],Math.min(lim-b[k[0]]-b[k[1]],d));o[k[1]]=b[k[1]]+d}else{d=Math.min(b[k[1]]-1,Math.max(-b[k[0]],d));o[k[0]]=b[k[0]]+d;o[k[1]]=b[k[1]]-d}}
+else if(o.t=='sq'){const e2=E(b).slice(),i0=2*ax,lim=ax?S.y:S.x;let nv=(sg>0?e2[i0+1]:e2[i0])+ds2;if(on(e))nv=near(nv,cands(ax,td.i));
+if(sg>0)e2[i0+1]=Math.min(lim,Math.max(e2[i0]+.05,nv));else e2[i0]=Math.max(0,Math.min(e2[i0+1]-.05,nv));setE(o,e2);toast((e2[1]-e2[0]).toFixed(2)+' × '+(e2[3]-e2[2]).toFixed(2))}
+else if(o.t=='poly'||o.t=='arr'){const pts=o.t=='poly'?b.pts:[[b.x,b.y],[b.x2,b.y2]],lo=Math.min(...pts.map(q=>q[ax])),hi=Math.max(...pts.map(q=>q[ax])),ln=hi-lo;
+if(ln>.01){let map;if(sg>0){const f=(Math.max(lo+.1,hi+ds2)-lo)/ln;map=v=>lo+(v-lo)*f}else{const f=(hi-Math.min(hi-.1,lo+ds2))/ln;map=v=>hi-(hi-v)*f}
+if(o.t=='poly')o.pts=b.pts.map(q=>{const r=q.slice();r[ax]=map(q[ax]);return r});else if(ax){o.y=map(b.y);o.y2=map(b.y2)}else{o.x=map(b.x);o.x2=map(b.x2)}}}
+else if(['dot','txt','icon'].includes(o.t))o.sz=Math.max(.2,(b.sz||1)*(1+sg*ds2*.5));
+draw()}});
+cv.addEventListener('pointerup',()=>{td=null;bd=null;draw()});
+sync();
+})();
+
 </script></body></html>
